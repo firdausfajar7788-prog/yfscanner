@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # PAGE CONFIG
 # =========================================================
 st.set_page_config(
-    page_title="Daily - YFinance",
+    page_title="Full Crypto Scanner - All Coins",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -29,9 +29,6 @@ st.markdown("""
         padding: 16px;
         box-shadow: 0 4px 20px rgba(0,255,255,0.05);
     }
-    [data-testid="stMetricLabel"] { color: #94a3b8; font-size: 13px; }
-    [data-testid="stMetricValue"] { color: #f1f5f9; font-size: 24px; font-weight: 700; }
-    
     .signal-strong-buy {
         background: linear-gradient(135deg, rgba(0,255,136,0.2), rgba(0,255,136,0.05));
         border: 1px solid #00ff88;
@@ -71,15 +68,7 @@ st.markdown("""
         border: none;
         border-radius: 10px;
         padding: 10px 24px;
-        transition: all 0.3s ease;
     }
-    .stButton > button:hover {
-        transform: scale(1.03);
-        box-shadow: 0 0 30px rgba(0,255,136,0.3);
-    }
-    .volume-up { color: #00ff88; font-weight: 700; }
-    .volume-down { color: #ff3b5c; font-weight: 700; }
-    .volume-neutral { color: #ffaa00; font-weight: 700; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -96,8 +85,8 @@ if "last_update_time" not in st.session_state:
 # =========================================================
 # HEADER
 # =========================================================
-st.title("📊 Daily Scanner - YFinance")
-st.caption("Data dari Yahoo Finance + Telegram Alerts")
+st.title("📊 Full Crypto Scanner")
+st.caption("Scan SEMUA coin yang tersedia di Yahoo Finance + CoinGecko")
 col_time, _ = st.columns([2, 3])
 with col_time:
     st.caption(f"🕐 Last updated: {st.session_state.last_update_time.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -108,6 +97,12 @@ with col_time:
 with st.sidebar:
     st.header("⚙️ Settings")
     currency = st.selectbox("💱 Currency", ["USD", "IDR"])
+    
+    st.divider()
+    
+    # Jumlah coin yang di-scan
+    scan_limit = st.slider("📊 Jumlah Coin di-Scan", 50, 500, 200, step=50)
+    
     st.divider()
     
     # Telegram
@@ -125,7 +120,7 @@ with st.sidebar:
             if BOT_TOKEN and CHAT_ID:
                 try:
                     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-                    r = requests.post(url, json={"chat_id": CHAT_ID, "text": "🚀 Scanner YFinance aktif!"}, timeout=10)
+                    r = requests.post(url, json={"chat_id": CHAT_ID, "text": "🚀 Full Scanner aktif!"}, timeout=10)
                     st.success("✅ Pesan test terkirim!" if r.status_code == 200 else f"❌ Error {r.status_code}")
                 except Exception as e:
                     st.error(f"❌ Error: {e}")
@@ -135,16 +130,12 @@ with st.sidebar:
         if st.button("🔄 Refresh Now", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
+    
     st.divider()
     
     st.subheader("📊 Status")
-    st.metric("Coins Scanned", "100")
+    st.metric("Coin Source", "CoinGecko → YFinance")
     st.metric("Auto Refresh", "10 menit")
-    st.divider()
-    st.caption("📊 **Volume Trend Legend:**")
-    st.caption("🔼 Volume > 130% rata-rata 7 hari (naik)")
-    st.caption("🔽 Volume < 70% rata-rata 7 hari (turun)")
-    st.caption("➡️ Volume stabil (70-130%)")
 
 # =========================================================
 # FUNGSI AMBIL KURS IDR
@@ -161,8 +152,6 @@ def get_usd_to_idr():
     return 15500
 
 usd_to_idr = get_usd_to_idr()
-if currency == "IDR":
-    st.sidebar.info(f"💱 1 USD = {usd_to_idr:,.0f} IDR")
 
 # =========================================================
 # FUNGSI TELEGRAM
@@ -189,91 +178,77 @@ def format_telegram_message(row):
 <b>24H:</b> {row['24H %']}%
 <b>7D:</b> {row['7D %']}%
 <b>Volume:</b> {row['Volume (M)']}M {row.get('Volume Trend', '')}
+<b>Rank:</b> #{row['Rank']}
 🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 """
 
 # =========================================================
-# DAFTAR TOP 100 CRYPTO (SYMBOL)
+# 1. AMBIL DAFTAR SEMUA COIN DARI COINGECKO
 # =========================================================
-TOP_CRYPTO = [
-    "BTC", "ETH", "USDT", "BNB", "SOL", "XRP", "USDC", "ADA", "DOGE", "TRX",
-    "TON", "DOT", "MATIC", "DAI", "SHIB", "LINK", "BCH", "UNI", "LTC", "ATOM",
-    "XLM", "ETC", "OKB", "FIL", "APT", "HBAR", "MNT", "CRO", "XMR", "ARB",
-    "VET", "IMX", "MKR", "AAVE", "STX", "SUI", "RNDR", "INJ", "ALGO", "OP",
-    "TIA", "GRT", "TAO", "RUNE", "QNT", "SEI", "FLOW", "MNT", "NEO", "KCS",
-    "LDO", "FLOKI", "FTM", "GALA", "WIF", "ENA", "W", "PEPE", "ONDO", "JUP",
-    "AXS", "EOS", "CRV", "SNX", "LUNC", "BTT", "XDC", "KAVA", "CAKE", "COMP",
-    "CHZ", "YFI", "ZEC", "KSM", "SUSHI", "ENJ", "BAT", "ZIL", "ICX", "QTUM",
-    "SC", "RSR", "BAND", "STORJ", "ALPHA", "OCEAN", "KNC", "KDA", "HOT", "RVN",
-    "DASH", "ZRX", "NANO", "BTS", "WAVES", "VTHO", "XEM", "DGB", "ETN", "NKN"
-]
-
-# =========================================================
-# AMBIL DATA DARI YFINANCE (TANPA COINGECKO!)
-# =========================================================
-@st.cache_data(ttl=300)
-def get_yfinance_data(symbols):
-    """Ambil data dari Yahoo Finance untuk banyak symbol"""
-    results = []
-    
-    with ThreadPoolExecutor(max_workers=20) as executor:
-        future_to_symbol = {
-            executor.submit(get_single_yfinance_data, sym): sym
-            for sym in symbols
-        }
-        for future in as_completed(future_to_symbol):
-            try:
-                data = future.result()
-                if data:
-                    results.append(data)
-            except Exception as e:
-                continue
-            time.sleep(0.05)  # Hindari rate limit
-    
-    return results
-
-def get_single_yfinance_data(symbol):
-    """Ambil data single symbol dari YFinance"""
+@st.cache_data(ttl=3600)
+def get_all_coins_from_coingecko(limit=200):
+    """Ambil daftar coin dari CoinGecko (nama + symbol)"""
+    url = "https://api.coingecko.com/api/v3/coins/markets"
+    params = {
+        "vs_currency": "usd",
+        "order": "market_cap_desc",
+        "per_page": limit,
+        "page": 1,
+        "sparkline": False,
+        "price_change_percentage": "24h,7d"
+    }
     try:
-        ticker = yf.Ticker(symbol + "-USD")  # Pakai -USD untuk crypto
+        resp = requests.get(url, params=params, timeout=30)
+        if resp.status_code == 200:
+            data = resp.json()
+            # Ambil symbol dan name saja
+            return [{"symbol": coin["symbol"].upper(), "name": coin["name"]} for coin in data]
+        else:
+            st.error(f"❌ CoinGecko error: {resp.status_code}")
+            return []
+    except Exception as e:
+        st.error(f"❌ CoinGecko exception: {e}")
+        return []
+
+# =========================================================
+# 2. AMBIL DATA DARI YFINANCE UNTUK 1 COIN
+# =========================================================
+def get_yfinance_data_single(symbol, name):
+    """Ambil data dari Yahoo Finance untuk 1 coin"""
+    try:
+        ticker = yf.Ticker(f"{symbol}-USD")
         
-        # Ambil info (market cap, name)
+        # Coba dapatkan info
         info = ticker.info
-        name = info.get("shortName", symbol)
-        market_cap = info.get("marketCap", 0)
-        if not market_cap:
-            market_cap = info.get("totalAssets", 0)
         
         # Ambil data historis 7 hari
         hist = ticker.history(period="7d", interval="1d")
         if hist.empty or len(hist) < 3:
             return None
         
-        # Data terbaru
         latest = hist.iloc[-1]
         price = latest["Close"]
         volume_24h = latest["Volume"]
         
-        # Hitung change 24h
+        # Change 24h
         if len(hist) >= 2:
             prev = hist.iloc[-2]
             change_24h = ((price - prev["Close"]) / prev["Close"]) * 100
         else:
             change_24h = 0
         
-        # Hitung change 7d
+        # Change 7d
         if len(hist) >= 7:
             first = hist.iloc[0]
             change_7d = ((price - first["Close"]) / first["Close"]) * 100
         else:
             change_7d = 0
         
-        # Hitung rata-rata volume 7 hari
+        # Volume trend
         volumes = hist["Volume"].tolist()
         avg_volume_7d = sum(volumes) / len(volumes) if volumes else volume_24h
-        
-        # Volume trend
         ratio = volume_24h / avg_volume_7d if avg_volume_7d > 0 else 1
+        
         if ratio > 1.3:
             volume_trend = "🔼"
         elif ratio < 0.7:
@@ -281,8 +256,8 @@ def get_single_yfinance_data(symbol):
         else:
             volume_trend = "➡️"
         
-        # Ranking (pakai market cap)
-        rank = 0  # Nanti dihitung setelah semua data terkumpul
+        # Market cap dari info
+        market_cap = info.get("marketCap", 0) or info.get("totalAssets", 0)
         
         return {
             "Coin": name,
@@ -290,24 +265,23 @@ def get_single_yfinance_data(symbol):
             "Price": price,
             "24H %": change_24h,
             "7D %": change_7d,
-            "Market Cap": market_cap,
             "Volume (M)": volume_24h / 1_000_000,
-            "Volume Avg 7D": avg_volume_7d,
             "Volume Trend": volume_trend,
-            "Volume Ratio": ratio
+            "Volume Ratio": ratio,
+            "Market Cap": market_cap
         }
-        
     except Exception as e:
         return None
 
 # =========================================================
-# HITUNG SCORE
+# 3. HITUNG SCORE
 # =========================================================
 def calculate_score(row):
     score = 0
     change_24h = row["24H %"]
     change_7d = row["7D %"]
     volume_ratio = row.get("Volume Ratio", 1)
+    market_cap = row.get("Market Cap", 0)
     
     # 24h change (max 50)
     if change_24h > 10: score += 50
@@ -326,10 +300,9 @@ def calculate_score(row):
     elif volume_ratio > 1.3: score += 10
     
     # Market cap bonus (max 15)
-    mcap = row.get("Market Cap", 0)
-    if mcap > 100_000_000_000: score += 15  # > 100B
-    elif mcap > 10_000_000_000: score += 10  # > 10B
-    elif mcap > 1_000_000_000: score += 5   # > 1B
+    if market_cap > 100_000_000_000: score += 15  # > 100B
+    elif market_cap > 10_000_000_000: score += 10  # > 10B
+    elif market_cap > 1_000_000_000: score += 5   # > 1B
     
     # Signal
     if score >= 80: signal = "🔥 STRONG BUY"
@@ -340,20 +313,56 @@ def calculate_score(row):
     return score, signal
 
 # =========================================================
-# MAIN
+# MAIN - SCAN SEMUA
 # =========================================================
-with st.spinner("📊 Mengambil data dari Yahoo Finance untuk 100 coin..."):
-    raw_data = get_yfinance_data(TOP_CRYPTO)
+st.info(f"🔄 Mengambil daftar {scan_limit} coin dari CoinGecko...")
 
-if not raw_data:
-    st.error("❌ Gagal mengambil data dari Yahoo Finance")
+# 1. Ambil daftar coin dari CoinGecko
+coin_list = get_all_coins_from_coingecko(limit=scan_limit)
+
+if not coin_list:
+    st.error("❌ Gagal mengambil daftar coin dari CoinGecko")
     st.stop()
 
-# Proses data
+st.success(f"✅ Mendapat {len(coin_list)} coin dari CoinGecko")
+
+# 2. Ambil data dari YFinance untuk setiap coin
+st.info("📊 Mengambil data dari Yahoo Finance...")
+
 results = []
-for data in raw_data:
+progress_bar = st.progress(0)
+status_text = st.empty()
+
+with ThreadPoolExecutor(max_workers=15) as executor:
+    future_to_coin = {
+        executor.submit(get_yfinance_data_single, coin["symbol"], coin["name"]): coin
+        for coin in coin_list
+    }
+    
+    for idx, future in enumerate(as_completed(future_to_coin)):
+        progress_bar.progress((idx + 1) / len(coin_list))
+        status_text.text(f"🔄 Memproses {idx + 1}/{len(coin_list)}...")
+        
+        try:
+            data = future.result()
+            if data:
+                results.append(data)
+        except Exception as e:
+            continue
+        time.sleep(0.05)
+
+progress_bar.empty()
+status_text.empty()
+
+if not results:
+    st.error("❌ Tidak ada data yang berhasil diambil")
+    st.stop()
+
+# 3. Proses data
+processed_results = []
+for data in results:
     score, signal = calculate_score(data)
-    results.append({
+    processed_results.append({
         "Coin": data["Coin"],
         "Symbol": data["Symbol"],
         "Price": data["Price"],
@@ -363,12 +372,10 @@ for data in raw_data:
         "Volume Trend": data["Volume Trend"],
         "Score": score,
         "Signal": signal,
-        "Market Cap": data.get("Market Cap", 0),
-        "Volume Avg 7D": data.get("Volume Avg 7D", 0)
+        "Market Cap": data.get("Market Cap", 0)
     })
 
-# Update rank berdasarkan score
-df = pd.DataFrame(results)
+df = pd.DataFrame(processed_results)
 df = df.sort_values("Score", ascending=False).reset_index(drop=True)
 df["Rank"] = df.index + 1
 
@@ -440,35 +447,23 @@ tab1, tab2, tab3, tab4 = st.tabs(["🚀 Breakout Watchlist", "💎 Strong Buy", 
 with tab1:
     breakout = df[(df["24H %"] > 5) & (df["Score"] > 40)]
     if not breakout.empty:
-        st.dataframe(breakout.head(20), use_container_width=True, hide_index=True,
-                     column_config={"Price": st.column_config.NumberColumn(format="$%.4f"),
-                                    "24H %": st.column_config.NumberColumn(format="%.2f%%"),
-                                    "Score": st.column_config.NumberColumn(format="%.0f")})
+        st.dataframe(breakout.head(20), use_container_width=True, hide_index=True)
     else:
         st.info("Tidak ada breakout")
 with tab2:
     strong = df[df["Signal"] == "🔥 STRONG BUY"]
     if not strong.empty:
-        st.dataframe(strong, use_container_width=True, hide_index=True,
-                     column_config={"Price": st.column_config.NumberColumn(format="$%.4f"),
-                                    "24H %": st.column_config.NumberColumn(format="%.2f%%"),
-                                    "Score": st.column_config.NumberColumn(format="%.0f")})
+        st.dataframe(strong, use_container_width=True, hide_index=True)
     else:
         st.info("Tidak ada Strong Buy")
 with tab3:
     buy = df[df["Signal"] == "🟢 BUY"]
     if not buy.empty:
-        st.dataframe(buy, use_container_width=True, hide_index=True,
-                     column_config={"Price": st.column_config.NumberColumn(format="$%.4f"),
-                                    "24H %": st.column_config.NumberColumn(format="%.2f%%"),
-                                    "Score": st.column_config.NumberColumn(format="%.0f")})
+        st.dataframe(buy, use_container_width=True, hide_index=True)
     else:
         st.info("Tidak ada Buy")
 with tab4:
-    st.dataframe(df, use_container_width=True, height=500, hide_index=True,
-                 column_config={"Price": st.column_config.NumberColumn(format="$%.4f"),
-                                "24H %": st.column_config.NumberColumn(format="%.2f%%"),
-                                "Score": st.column_config.NumberColumn(format="%.0f")})
+    st.dataframe(df, use_container_width=True, height=500, hide_index=True)
     csv = df.to_csv(index=False).encode('utf-8')
     st.download_button("📥 Download CSV", csv, f"crypto_scanner_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", "text/csv")
 
@@ -487,16 +482,16 @@ with st.expander("⚠️ Avoid List"):
 # =========================================================
 st.divider()
 st.subheader("📈 Coin Detail")
-selected = st.selectbox("Select Coin", df["Symbol"].tolist(),
-                        index=df["Symbol"].tolist().index(st.session_state.selected_symbol) if st.session_state.selected_symbol in df["Symbol"].values else 0)
-st.session_state.selected_symbol = selected
-row = df[df["Symbol"] == selected].iloc[0]
-
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("🪙 Coin", row["Coin"])
-col2.metric("💰 Price", f"{row['Price']:,.4f} USD")
-col3.metric("📈 24H Change", f"{row['24H %']}%")
-col4.metric("🧠 Score", f"{row['Score']}/100")
+if not df.empty:
+    selected = st.selectbox("Select Coin", df["Symbol"].tolist())
+    st.session_state.selected_symbol = selected
+    row = df[df["Symbol"] == selected].iloc[0]
+    
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("🪙 Coin", row["Coin"])
+    col2.metric("💰 Price", f"{row['Price']:,.4f} USD")
+    col3.metric("📈 24H Change", f"{row['24H %']}%")
+    col4.metric("🧠 Score", f"{row['Score']}/100")
 
 # =========================================================
 # AUTO REFRESH
@@ -509,6 +504,6 @@ st_autorefresh(interval=600000, key="refresh")
 st.divider()
 st.caption(
     f"🔄 Last updated: {st.session_state.last_update_time.strftime('%Y-%m-%d %H:%M:%S')} | "
-    f"Total: {len(df)} | Sumber: Yahoo Finance | "
+    f"Total: {len(df)} | Sumber: CoinGecko → Yahoo Finance | "
     f"Telegram: {'✅' if BOT_TOKEN and CHAT_ID else '❌'}"
 )
