@@ -1,9 +1,7 @@
 streamlit
 pandas
-numpy
-plotly
+yfinance
 requests
 streamlit-autorefresh
-yfinance
-gspread
-oauth2client
+numpy
+scikit-learn
