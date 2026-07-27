@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # PAGE CONFIG
 # =========================================================
 st.set_page_config(
-    page_title="🎮 Crypto Hunter",
+    page_title="🎮 Crypto Hunter V2",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -79,10 +79,6 @@ st.markdown("""
         border: 1px solid rgba(255,255,255,0.1) !important;
     }
     
-    .signal-buy { color: #00ff88; font-weight: 700; }
-    .signal-sell { color: #ff3b5c; font-weight: 700; }
-    .signal-hold { color: #ffaa00; font-weight: 700; }
-    
     .stButton > button {
         background: linear-gradient(145deg, #00ff88, #00cc66);
         color: #000;
@@ -108,22 +104,6 @@ st.markdown("""
         transition: width 1s ease;
         border-radius: 10px;
     }
-    
-    .coin-card {
-        background: rgba(17, 24, 39, 0.8);
-        backdrop-filter: blur(5px);
-        border: 1px solid rgba(255,255,255,0.05);
-        border-radius: 12px;
-        padding: 15px;
-        margin: 5px 0;
-        transition: all 0.3s ease;
-        cursor: pointer;
-    }
-    .coin-card:hover {
-        transform: translateX(10px);
-        border-color: #00ff88;
-        box-shadow: 0 0 30px rgba(0, 255, 136, 0.05);
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -140,8 +120,6 @@ if "combo" not in st.session_state:
     st.session_state.combo = 0
 if "max_combo" not in st.session_state:
     st.session_state.max_combo = 0
-if "streak" not in st.session_state:
-    st.session_state.streak = 0
 if "found_coins" not in st.session_state:
     st.session_state.found_coins = []
 if "achievements" not in st.session_state:
@@ -150,11 +128,11 @@ if "last_scan_time" not in st.session_state:
     st.session_state.last_scan_time = datetime.now()
 
 # =========================================================
-# HEADER - GAME STYLE
+# HEADER
 # =========================================================
 st.markdown("""
-# 🎮 CRYPTO HUNTER
-### `>> Scan. Find. Profit. <<`
+# 🎮 CRYPTO HUNTER V2
+### `>> Filter: Hanya Koin Gak Aneh <<`
 """)
 
 col_level, col_xp, col_score, col_combo = st.columns(4)
@@ -169,8 +147,11 @@ col_combo.metric("🔥 Combo", f"{st.session_state.combo}x")
 with st.sidebar:
     st.header("⚙️ Settings")
     
-    # Jumlah coin yang di-scan
-    scan_limit = st.slider("🔍 Scan Depth", 50, 300, 100)
+    st.subheader("🎯 Filter Koin")
+    min_market_cap = st.selectbox("Min Market Cap", ["$10M", "$50M", "$100M", "$500M", "$1B"], index=2)
+    min_price = st.selectbox("Min Price", ["$0.001", "$0.01", "$0.1", "$1"], index=1)
+    
+    scan_limit = st.slider("🔍 Scan Depth", 50, 300, 150)
     
     st.divider()
     
@@ -184,7 +165,6 @@ with st.sidebar:
     
     st.divider()
     
-    # Status
     st.subheader("📊 Status")
     st.metric("Total Hunted", len(st.session_state.found_coins))
     st.metric("Best Combo", f"{st.session_state.max_combo}x")
@@ -197,10 +177,10 @@ with st.sidebar:
         st.rerun()
 
 # =========================================================
-# GET DATA
+# GET DATA - DENGAN FILTER
 # =========================================================
 @st.cache_data(ttl=300)
-def get_coins_from_coingecko(limit=100):
+def get_coins_from_coingecko(limit=200):
     url = "https://api.coingecko.com/api/v3/coins/markets"
     params = {
         "vs_currency": "usd",
@@ -230,6 +210,10 @@ def get_yfinance_data_single(symbol, name):
         latest = hist.iloc[-1]
         price = latest["Close"]
         volume_24h = latest["Volume"]
+        
+        # Filter: harga harus masuk akal
+        if price < 0.0001:
+            return None
         
         if len(hist) >= 2:
             prev = hist.iloc[-2]
@@ -269,7 +253,6 @@ def get_yfinance_data_single(symbol, name):
         return None
 
 def calculate_rarity(score, volume_ratio):
-    """Beri rarity berdasarkan performa"""
     if score >= 85 and volume_ratio > 1.5:
         return "⚡ LEGENDARY", "legendary"
     elif score >= 75:
@@ -308,16 +291,46 @@ def calculate_score(row):
     return score
 
 # =========================================================
-# MAIN SCAN - GAME MODE
+# MAIN SCAN
 # =========================================================
+# Parsing filter values
+filter_map = {
+    "$10M": 10_000_000,
+    "$50M": 50_000_000,
+    "$100M": 100_000_000,
+    "$500M": 500_000_000,
+    "$1B": 1_000_000_000
+}
+min_mcap_value = filter_map.get(min_market_cap, 100_000_000)
+
+price_map = {
+    "$0.001": 0.001,
+    "$0.01": 0.01,
+    "$0.1": 0.1,
+    "$1": 1.0
+}
+min_price_value = price_map.get(min_price, 0.01)
+
 with st.spinner("🔍 Hunting for treasures..."):
-    # Ambil daftar coin
     coins_data = get_coins_from_coingecko(limit=scan_limit)
     if not coins_data:
         st.error("❌ Failed to get data")
         st.stop()
     
-    # Scan dengan progress bar
+    # Filter CoinGecko dulu
+    filtered_coins = []
+    for coin in coins_data:
+        mcap = coin.get("market_cap", 0)
+        price = coin.get("current_price", 0)
+        if mcap >= min_mcap_value and price >= min_price_value:
+            filtered_coins.append(coin)
+    
+    st.info(f"🔍 Found {len(filtered_coins)} coins after filtering (from {len(coins_data)})")
+    
+    if not filtered_coins:
+        st.warning("No coins passed the filter. Try lower thresholds!")
+        st.stop()
+    
     results = []
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -325,12 +338,12 @@ with st.spinner("🔍 Hunting for treasures..."):
     with ThreadPoolExecutor(max_workers=15) as executor:
         future_to_coin = {
             executor.submit(get_yfinance_data_single, coin["symbol"].upper(), coin["name"]): coin
-            for coin in coins_data
+            for coin in filtered_coins
         }
         
         for idx, future in enumerate(as_completed(future_to_coin)):
-            progress_bar.progress((idx + 1) / len(coins_data))
-            status_text.text(f"🔎 Hunting {idx + 1}/{len(coins_data)}...")
+            progress_bar.progress((idx + 1) / len(filtered_coins))
+            status_text.text(f"🔎 Hunting {idx + 1}/{len(filtered_coins)}...")
             
             try:
                 data = future.result()
@@ -344,11 +357,11 @@ with st.spinner("🔍 Hunting for treasures..."):
     status_text.empty()
 
 if not results:
-    st.warning("No coins found!")
+    st.warning("No valid data found. Try different filters!")
     st.stop()
 
 # =========================================================
-# PROCESS RESULTS - GAME LOGIC
+# PROCESS RESULTS
 # =========================================================
 processed = []
 for data in results:
@@ -385,12 +398,9 @@ df["Rank"] = df.index + 1
 # GAME REWARDS
 # =========================================================
 new_finds = []
-new_achievements = []
 
-# Cari legendary
 legendary = df[df["Rarity"].str.contains("LEGENDARY")]
 if not legendary.empty and legendary.iloc[0]["Symbol"] not in st.session_state.found_coins:
-    new_finds.append(legendary.iloc[0])
     st.session_state.player_score += 50
     st.session_state.xp += 25
     st.session_state.combo += 1
@@ -400,7 +410,6 @@ if not legendary.empty and legendary.iloc[0]["Symbol"] not in st.session_state.f
         st.session_state.achievements.append("legendary_hunter")
         st.balloons()
 
-# Cari epic
 epic = df[(df["Rarity"].str.contains("EPIC")) & (df["Score"] > 70)]
 if not epic.empty:
     for _, row in epic.iterrows():
@@ -408,12 +417,10 @@ if not epic.empty:
             st.session_state.player_score += 20
             st.session_state.xp += 10
 
-# Update found coins
 for _, row in df.iterrows():
     if row["Symbol"] not in st.session_state.found_coins:
         st.session_state.found_coins.append(row["Symbol"])
 
-# Level up
 if st.session_state.xp >= 100:
     st.session_state.level += 1
     st.session_state.xp = 0
@@ -423,23 +430,16 @@ if st.session_state.xp >= 100:
 st.session_state.last_scan_time = datetime.now()
 
 # =========================================================
-# DISPLAY - GAME UI
+# DISPLAY
 # =========================================================
-col1, col2, col3 = st.columns([2, 1, 1])
+st.subheader("🏆 TOP HUNT")
 
-with col1:
-    st.subheader("🏆 TOP HUNT")
-
-with col2:
-    if st.button("⚔️ Hunt Again!"):
-        st.cache_data.clear()
-        st.rerun()
-
-with col3:
-    st.caption(f"🕐 Last Hunt: {st.session_state.last_scan_time.strftime('%H:%M:%S')}")
+if st.button("⚔️ Hunt Again!", use_container_width=True):
+    st.cache_data.clear()
+    st.rerun()
 
 # =========================================================
-# TOP CARD - BOSS DISPLAY
+# TOP CARD
 # =========================================================
 if not df.empty:
     top = df.iloc[0]
@@ -458,7 +458,7 @@ if not df.empty:
                 <div><span class="legendary" style="padding: 2px 12px; border-radius: 20px; font-size: 12px;">{top['Rarity']}</span></div>
             </div>
         </div>
-        <div style="display: flex; gap: 30px; margin-top: 15px; color: #94a3b8; font-size: 14px;">
+        <div style="display: flex; gap: 30px; margin-top: 15px; color: #94a3b8; font-size: 14px; flex-wrap: wrap;">
             <span>💰 ${top['Price']:.4f}</span>
             <span>📈 <span style="color: {'#00ff88' if top['24H %'] > 0 else '#ff3b5c'}">{top['24H %']}%</span></span>
             <span>📊 {top['Signal']}</span>
@@ -472,7 +472,7 @@ if not df.empty:
     """, unsafe_allow_html=True)
 
 # =========================================================
-# RARITY FILTER TABS
+# TABS
 # =========================================================
 tab_legendary, tab_epic, tab_rare, tab_all = st.tabs([
     "👑 Legendary", "💎 Epic", "🌟 Rare", "📊 All"
@@ -484,7 +484,7 @@ with tab_legendary:
         st.dataframe(legendary_df, use_container_width=True, hide_index=True)
         st.success(f"⚡ Found {len(legendary_df)} Legendary!")
     else:
-        st.info("No Legendary found yet. Keep hunting!")
+        st.info("No Legendary found. Keep hunting!")
 
 with tab_epic:
     epic_df = df[df["Rarity"].str.contains("EPIC")]
@@ -522,11 +522,6 @@ with st.expander("🏅 Achievements", expanded=False):
         st.info("No achievements yet. Hunt more!")
 
 # =========================================================
-# AUTO REFRESH
-# =========================================================
-st_autorefresh(interval=300000, key="refresh")
-
-# =========================================================
 # FOOTER
 # =========================================================
 st.divider()
@@ -534,5 +529,8 @@ st.caption(
     f"⚔️ Total Hunted: {len(st.session_state.found_coins)} coins | "
     f"Level: {st.session_state.level} | "
     f"Combo: {st.session_state.combo}x | "
-    f"Best Combo: {st.session_state.max_combo}x"
+    f"Best Combo: {st.session_state.max_combo}x | "
+    f"Filter: MCap > {min_market_cap}, Price > {min_price}"
 )
+
+st_autorefresh(interval=300000, key="refresh")
